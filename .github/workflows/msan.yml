@@ -22,8 +22,9 @@ jobs:
         if: runner.os == 'Linux'
         run: | 
           sudo apt-get update
-          sudo apt-get install -y automake autoconf libtool libxkbcommon-dev libxkbcommon-tools libxkbcommon-x11-0 libxkbcommon-x11-dev
-          sudo apt-get install -y libxcb-ewmh-dev libxcb-icccm4-dev libxcb-cursor-dev libxcb-randr0-dev libxcb-xinerama0-dev
+          sudo apt-get install -y automake autoconf libtool 
+          sudo apt-get install -y libxcb1-dev libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-cursor-dev libxcb-randr0-dev libxcb-xinerama0-dev
+
       
       - name: Build repository 
         run: | 
