@@ -22,7 +22,7 @@ jobs:
         if: runner.os == 'Linux'
         run: | 
           sudo apt-get update
-          sudo apt-get install -y automake autoreconf libtool
+          sudo apt-get install -y automake autoconf libtool
           
       - name: Build repository 
         run: | 
