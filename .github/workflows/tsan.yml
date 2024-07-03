@@ -1,0 +1,75 @@
+name: Run ThreadSanitizer
+
+on:
+  push:
+
+jobs:
+  run-tsan:
+    name: '${{ matrix.os }}'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2 
+        with:
+          ref: 5133f50f309707ae2e6b229bc95adcc907f8a7d9
+          submodules: recursive
+          
+      - name: Install dependencies for project (Linux)
+        if: runner.os == 'Linux'
+        run: | 
+          sudo apt-get update
+          sudo apt-get install -y automake autoconf libtool pkg-config bison check
+          sudo apt-get install -y pandoc-* libpango-1.0-0 libpango1.0-dev libpangomm-1.4-dev libpangoft2-1.0-0 libpangomm-1.4-1v5 libpango3.0-cil libpangocairo-1.0-0 libcairo2 libcairo2-dev libglib2.0-0 gir1.2-glib-2.0 libgdk-pixbuf-2.0 libgdk-pixbuf-2.0-dev  libstartup-notification0  libstartup-notification0-dev libxcb1-dev libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-randr0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxcb-xkb1 libxcb-randr0 libxcb-randr0-dev libxcb-util-dev libxcb-util0-dev libxcb-util1 libxcb-ewmh-dev libxcb-ewmh2 libxcb-icccm4 libxcb-icccm4-dev libxcb-cursor-dev libxcb-cursor0 libxcb-imdkit-dev libxcb-imdkit1 
+          sudo apt-get install -y xmlto docbook-utils
+          
+      - name: Build repository 
+        run: | 
+          git submodule update --init --recursive
+          export CC=clang
+          export CXX=clang++
+          export CFLAGS="-fsanitize=thread -fPIE -fPIC -O2 -g -gcolumn-info"
+          export LDFLAGS="-fsanitize=thread -pie"
+          autoreconf -i
+          ./configure --disable-docs
+          sed -i 's/^CC\s*=.*/CC = clang/' Makefile
+          sed -i 's/^CXX\s*=.*/CXX = clang++/' Makefile
+          sed -i 's/^CFLAGS\s*=.*/& -fsanitize=thread -fPIE -fPIC -O2 -g -gcolumn-info/' Makefile
+          sed -i 's/^LDFLAGS\s*=.*/& -fsanitize=thread -pie/' Makefile
+          sed -i 's/^CPP\s*=.*/CPP = clang -E/' Makefile
+          make
+
+      - name: Install ThreadSanitizer dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y clang-14 libclang-14-dev llvm-14 llvm-14-dev llvm-14-tools llvm-14-linker-tools
+      
+      - name: Run Google Thread Sanitizer (executables) (Linux)
+        if: runner.os == 'Linux'
+        run: |
+            #!/bin/bash
+            set +e
+            DIRECTORY=$(pwd)
+            
+            is_executable() {
+              local file="$1"
+              if file "$file" | grep -q 'ELF 64-bit'; then
+                return 0
+              else
+                return 1
+              fi
+            }
+            
+            run_with_tsan() {
+              local executable="$1"
+              TSAN_OPTIONS="force_seq_cst_atomics=1 exitcode=1 verbosity=2" timeout 10s "$executable"
+              local exit_status=$?
+            }
+                          
+            find "$DIRECTORY" -type f -executable | while read -r file; do
+              if is_executable "$file"; then
+                run_with_tsan "$file"
+              fi
+            done
