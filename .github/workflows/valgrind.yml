@@ -1,0 +1,102 @@
+name: Run Valgrind
+
+on:
+  push:
+
+jobs:
+  run-valgrind:
+    name: '${{ matrix.os }}'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2 
+        with:
+          ref: 5133f50f309707ae2e6b229bc95adcc907f8a7d9
+          submodules: recursive
+          
+      - name: Install dependencies for project (Linux)
+        if: runner.os == 'Linux'
+        run: | 
+          sudo apt-get update
+          sudo apt-get install -y automake autoconf libtool pkg-config bison check
+          sudo apt-get install -y pandoc-* libpango-1.0-0 libpango1.0-dev libpangomm-1.4-dev libpangoft2-1.0-0 libpangomm-1.4-1v5 libpango3.0-cil libpangocairo-1.0-0 libcairo2 libcairo2-dev libglib2.0-0 gir1.2-glib-2.0 libgdk-pixbuf-2.0 libgdk-pixbuf-2.0-dev  libstartup-notification0  libstartup-notification0-dev libxcb1-dev libxcb-xkb-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb-ewmh-dev libxcb-icccm4-dev libxcb-randr0-dev libxcb-xinerama0-dev libxcb-xkb-dev libxcb-xkb1 libxcb-randr0 libxcb-randr0-dev libxcb-util-dev libxcb-util0-dev libxcb-util1 libxcb-ewmh-dev libxcb-ewmh2 libxcb-icccm4 libxcb-icccm4-dev libxcb-cursor-dev libxcb-cursor0 libxcb-imdkit-dev libxcb-imdkit1 
+          sudo apt-get install -y xmlto docbook-utils
+          
+      - name: Build repository 
+        run: | 
+          git submodule update --init --recursive
+          autoreconf -i && ./configure --disable-docs && make
+
+      - name: Install Valgrind
+        if: runner.os == 'Linux'
+        run: | 
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+      
+      - name: Run Valgrind
+        run: |
+          #!/bin/bash
+          set +e 
+
+          echo "<----------------------Start Valgrind Service---------------------->"
+          
+          is_executable() {
+            local file="$1"
+            if file "$file" | grep -q 'ELF 64-bit'; then
+              return 0
+            else
+              return 1
+            fi
+          }
+
+          run_with_valgrind() {
+            local executable="$1"
+            local tool="$2"
+            local tool_name="$3"
+            local valgrind_options="--read-inline-info=yes --trace-children=yes -v -v"
+
+            if [ "$tool" == "memcheck" ]; then
+              valgrind_options+=" --leak-check=full --show-leak-kinds=all --track-origins=yes"
+            fi
+
+            timeout 60s valgrind --tool="$tool" $valgrind_options "$executable"
+            local exit_status=$?
+
+            if [ $exit_status -eq 124 ]; then
+              return
+            elif [ $exit_status -ne 0 ]; then
+              ((success += 1))
+            else
+              ((fails += 1))
+            fi
+          }
+
+          tools=(
+            "memcheck Memcheck"
+            "cachegrind Cachegrind"
+            "callgrind Callgrind"
+            "helgrind Helgrind"
+            "drd DRD"
+            "massif Massif"
+            "dhat DHAT"
+            "lackey Lackey"
+            "none None"
+            "exp-bbv exp-bbv"
+          )
+
+          find . -type f -executable | while read -r file; do
+            if is_executable "$file"; then
+              for tool_info in "${tools[@]}"; do
+                tool=(${tool_info})
+                echo "" 
+                echo "" 
+                echo ""
+                echo "========Valgrind tool: ${tool[1]}========"
+                run_with_valgrind "$file" "${tool[0]}" "${tool[1]}"
+              done
+            fi
+          done
